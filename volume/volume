@@ -1,91 +1,145 @@
-#!/usr/bin/env bash
-# Copyright (C) 2014 Julien Bonjean <julien@bonjean.info>
-# Copyright (C) 2014 Alexander Keller <github@nycroth.com>
+#!/usr/bin/env python
 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+import os
+import subprocess
+import re
+from collections import namedtuple
+from typing import Iterable
+from itertools import chain
 
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+VolumeParams = namedtuple('VolumeParams', 'vol_prc,vol_db,state,step')
 
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+scontrol_regex = re.compile(r'Simple mixer control \'(.*)\',0')
+volume_regex = re.compile(r'.*\[(\d+%)\] (\[(-?\d+.\d+dB)\] )?\[(on|off)\]')
 
-#------------------------------------------------------------------------
 
-# The second parameter overrides the mixer selection
-# For PulseAudio users, eventually use "pulse"
-# For Jack/Jack2 users, use "jackplug"
-# For ALSA users, you may use "default" for your primary card
-# or you may use hw:# where # is the number of the card desired
-if [[ -z "$MIXER" ]] ; then
-    MIXER="default"
-    if command -v pulseaudio >/dev/null 2>&1 && pulseaudio --check ; then
-        # pulseaudio is running, but not all installations use "pulse"
-        if amixer -D pulse info >/dev/null 2>&1 ; then
-            MIXER="pulse"
-        fi
-    fi
-    [ -n "$(lsmod | grep jack)" ] && MIXER="jackplug"
-    MIXER="${2:-$MIXER}"
-fi
+def define_mixer() -> str:
+    """
+    For PulseAudio users, eventually use "pulse"
+    For Jack/Jack2 users, use "jackplug"
+    For ALSA users, you may use "default" for your primary card or you may use hw:# where # is the number of the card desired.
 
-# The instance option sets the control to report and configure
-# This defaults to the first control of your selected mixer
-# For a list of the available, use `amixer -D $Your_Mixer scontrols`
-if [[ -z "$SCONTROL" ]] ; then
-    SCONTROL="${BLOCK_INSTANCE:-$(amixer -D $MIXER scontrols |
-                      sed -n "s/Simple mixer control '\([^']*\)',0/\1/p" |
-                      head -n1
-                    )}"
-fi
+    Returns:
+        str: defined mixter. Can be defined automatically or by MIXER environment variable.
+    """  # noqa: E501
+    default_mixer = 'default'
+    check_daemon_first = subprocess.run(['pulseaudio'], capture_output=True).returncode
+    check_daemon_second = subprocess.run(['pulseaudio', '--check'], capture_output=True).returncode
+    check_pulse = subprocess.run(['amixer', '-D', 'pulse', 'info'], capture_output=True).returncode
+    if (check_daemon_first or check_daemon_second) and check_pulse:
+        default_mixer = 'pulse'
 
-# The first parameter sets the step to change the volume by (and units to display)
-# This may be in in % or dB (eg. 5% or 3dB)
-if [[ -z "$STEP" ]] ; then
-    STEP="${1:-5%}"
-fi
+    lsmod = subprocess.run(['lsmod'], capture_output=True)
+    check_jack = subprocess.run(['grep', 'jack'], input=lsmod.stdout, capture_output=True)
+    if check_jack.stdout:
+        default_mixer = 'jackplug'
 
-# AMIXER(1):
-# "Use the mapped volume for evaluating the percentage representation like alsamixer, to be
-# more natural for human ear."
-NATURAL_MAPPING=${NATURAL_MAPPING:-0}
-if [[ "$NATURAL_MAPPING" != "0" ]] ; then
-    AMIXER_PARAMS="-M"
-fi
+    return os.getenv('MIXER', default_mixer)
 
-#------------------------------------------------------------------------
 
-capability() { # Return "Capture" if the device is a capture device
-  amixer $AMIXER_PARAMS -D $MIXER get $SCONTROL |
-    sed -n "s/  Capabilities:.*cvolume.*/Capture/p"
-}
+def define_control(mixer: str) -> str:
+    """
+    The instance option sets the control to report and configure
+    This defaults to the first control of your selected mixer
+    For a list of the available, use `amixer -D <your_mixer> scontrols`
 
-volume() {
-  amixer $AMIXER_PARAMS -D $MIXER get $SCONTROL $(capability)
-}
+    Args:
+        mixer (str): mixer
 
-format() {
-  
-  perl_filter='if (/.*\[(\d+%)\] (\[(-?\d+.\d+dB)\] )?\[(on|off)\]/)'
-  perl_filter+='{CORE::say $4 eq "off" ? "MUTE" : "'
-  # If dB was selected, print that instead
-  perl_filter+=$([[ $STEP = *dB ]] && echo '$3' || echo '$1')
-  perl_filter+='"; exit}'
-  output=$(perl -ne "$perl_filter")
-  echo "$LABEL$output"
-}
+    Returns:
+        str: defined scontrol. Can be defined automatically or by SCONTROL environment variable.
+    """
+    scontrol = os.getenv('SCONTROL', 'Master')
+    controls = subprocess.run(['amixer', '-D', mixer, 'scontrols'], capture_output=True, text=True).stdout.split('\n')
+    for line in controls:
+        res = scontrol_regex.search(line)
+        if res.group(1) == scontrol:
+            return scontrol
 
-#------------------------------------------------------------------------
 
-case $BLOCK_BUTTON in
-  3) amixer $AMIXER_PARAMS -q -D $MIXER sset $SCONTROL $(capability) toggle ;;  # right click, mute/unmute
-  4) amixer $AMIXER_PARAMS -q -D $MIXER sset $SCONTROL $(capability) ${STEP}+ unmute ;; # scroll up, increase
-  5) amixer $AMIXER_PARAMS -q -D $MIXER sset $SCONTROL $(capability) ${STEP}- unmute ;; # scroll down, decrease
-esac
+def define_step() -> str:
+    """
+    The first parameter sets the step to change the volume by (and units to display)
+    This may be in in % or dB (eg. 5% or 3dB)
 
-volume | format
+    Returns:
+        str: defined step from environment variable STEP. Defaults to '5%'.
+    """
+    return os.getenv('STEP', '5%')
+
+
+def define_amixer_params() -> str:
+    """
+    AMIXER(1):
+    "Use the mapped volume for evaluating the percentage representation like alsamixer, to be more natural for human ear."
+
+    Returns:
+        str: defined amixer params by environment variable NATURAL_MAPPING.
+    """  # noqa: E501
+    return '-M' if bool(int(os.getenv('NATURAL_MAPPING', '0'))) else ''
+
+
+def capability(cmd: Iterable, scontrol: str) -> Iterable:
+    if scontrol == 'Capture':
+        cmd = [*cmd, scontrol]
+    return cmd
+
+
+def volume(amixer_params: str, mixer: str, scontrol: str):
+    cmd = filter(None, capability(['amixer', amixer_params, '-D', mixer, 'get', scontrol], scontrol))
+    return subprocess.run(cmd, capture_output=True, text=True).stdout
+
+
+def format_output(in_data: str, step: str) -> dict[str | str]:
+    label_on = os.getenv('LABEL_ON', '')
+    label_mute = os.getenv('LABEL_MUTE', 'MUTE')
+    color_mute = os.getenv('COLOR_MUTE', '#FF0000')
+
+    parsed = volume_regex.search(in_data)
+    volume_params = VolumeParams(parsed.group(1), parsed.group(3), parsed.group(4), step)
+
+    txt = label_on
+    match volume_params:
+        case VolumeParams(_, _, 'off', _):
+            print(label_mute)  # full text
+            print(label_mute)  # short text
+            print(color_mute)  # color
+        case VolumeParams(_, vol_db, 'on', _ as step) if 'dB' in step:
+            txt += vol_db
+            print(txt)  # full text
+            print(txt)  # short text
+        case VolumeParams(vol_prc, _, 'on', _):
+            txt += vol_prc
+            print(txt)  # full text
+            print(txt)  # short text
+
+
+def handle_click(amixer_params: str, mixer: str, scontrol: str, step: str):
+    button_code = os.getenv('BLOCK_BUTTON')
+    cmd = filter(None, capability(['amixer', amixer_params, '-q', '-D', mixer, 'sset', scontrol], scontrol))
+
+    match button_code:
+        case '3':
+            cmd = chain(cmd, ['toggle'])
+        case '4':
+            cmd = chain(cmd, [f'{step}+', 'unmute'])
+        case '5':
+            cmd = chain(cmd, [f'{step}-', 'unmute'])
+        case _:
+            return
+    subprocess.run(cmd, capture_output=True, check=True)
+
+
+def main():
+    mixer = define_mixer()
+    scontrol = define_control(mixer)
+    amixer_params = define_amixer_params()
+    step = define_step()
+
+    handle_click(amixer_params, mixer, scontrol, step)
+    output = volume(amixer_params, mixer, scontrol)
+    format_output(output, step)
+
+
+if __name__ == '__main__':
+    main()
