@@ -19,4 +19,4 @@ $3=="tun" || ($4~/^tap/ || $3~/^tap/) {
     status=label
     color=on_color
 }
-END {if(status) printf("%s\n%s\n%s\n", name, status, color)}'
+END {if(status) gsub(/[ \t]+$/, "", status); printf("%s\n%s\n%s\n", name, status, color)}'
