@@ -106,10 +106,10 @@ def main():
     print(args['format_short'].format(**stats))  # short text
 
     # determine color
-    if args['crit_threshold'] > int(stats['perc_used']) >= args['warn_threshold']:
-        output_color = args['warn_color']
-    elif int(stats['perc_used']) >= args['crit_threshold']:
-        output_color = args['crit_color']
+    if args['threshold_crit'] > int(stats['perc_used']) >= args['threshold_warn']:
+        output_color = args['color_warn']
+    elif int(stats['perc_used']) >= args['threshold_crit']:
+        output_color = args['color_crit']
 
     output_color and print(output_color)
 
