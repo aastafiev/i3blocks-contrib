@@ -6,10 +6,16 @@ So a standard configuration minding a specific partition would look as follows:
 
 ```
 [disk_nas]
-label=:
 instance=/nas
 interval=30
 command=$SCRIPT_DIR/disk_usage/disk_usage
+LABEL=:
+THRESHOLD_WARN=80
+THRESHOLD_CRIT=90
+COLOR_CRIT=#d64e4e
+COLOR_WARN=#d6af4e
+FORMAT={used:.1f}G/{total:.1f}G ({perc_used:.1f}%) -  {avail:.1f}G
+FORMAT_SHORT={perc_used:.1f}%
 ```
 
 ## Arguments
@@ -60,13 +66,6 @@ To get:
 : 119.3G used of 518.5 total beeing 23.0%
 ```
 
-the following *format*-argument must be passed to the script:
-
-```
-format="{used:.1f}G used of {total:.1f} total beeing {perc_used}%"
-```
-Quotes are required for format.
-
 #### Fields
 
 * **avail:** available disk space in gigabytes
@@ -74,36 +73,26 @@ Quotes are required for format.
 * **total:** total diskspace in gigabytes
 * **perc_used:** disk usage in percent
 
-## Example
-
-```
-[disk_root]
-label=:
-instance=/
-interval=30
-command=$SCRIPT_DIR/disk_usage/disk_usage format="{used:.1f}G used of {total:.1f} Total beeing {perc_used}%" warn_color=#90ce00
-```
-
 ## Click events
 
 Upon a click event a terminal is opened with ncdu running for the configured partition. To adapt this to your personal setup, you'll need to change the function **launch_ncdu()**:
 
 ```python
 def launch_ncdu(mp):
-	cmd = [
-		'/usr/bin/sakura',
-		'-t',
-		'pop-up',
-		'-e',
-		'/usr/bin/ncdu %s' % mp,
-		'-x',
-	]
+    cmd = [
+        '/usr/bin/sakura',
+        '-t',
+        'pop-up',
+        '-e',
+        '/usr/bin/ncdu %s' % mp,
+        '-x',
+    ]
 
-	subprocess.Popen(
-		cmd,
-		stdout=open(os.devnull, 'w'),
-		stderr=subprocess.STDOUT
-	)
+    subprocess.Popen(
+        cmd,
+        stdout=open(os.devnull, 'w'),
+        stderr=subprocess.STDOUT
+    )
 ```
 
 Personally, I launch sakura with *pop-up* as title, which i can then use to configure i3 to set the window into floating mode:

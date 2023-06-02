@@ -62,21 +62,23 @@ def launch_ncdu(mp):
 
 def parse_args():
     args = {
-        'warn_threshold': 80,
-        'crit_threshold': 90,
-        'warn_color': '#d6af4e',
-        'crit_color': '#d64e4e',
-        'format': '{used:.1f}G/{total:.1f}G ({perc_used:.1f}%) -  {avail:.1f}G'
+        'threshold_warn': os.getenv('THRESHOLD_WARN', 80),
+        'threshold_crit': os.getenv('THRESHOLD_CRIT', 90),
+        'color_crit': os.getenv('COLOR_CRIT', '#d64e4e'),
+        'color_warn': os.getenv('COLOR_WARN', '#d6af4e'),
+        'format': os.getenv('FORMAT', '{used:.1f}G/{total:.1f}G ({perc_used:.1f}%) -  {avail:.1f}G'),
+        'format_short': os.getenv('FORMAT_SHORT', '{perc_used:.1f}%'),
     }
 
-    try:
-        for arg in sys.argv[1:]:
-            key, value = arg.split('=')
-            args[key] = int(value) if value.isdigit() else value
-    except (KeyError, ValueError):
-        # ValuError in case user does something weird
-        pass
-
+    label = os.getenv('LABEL')
+    for arg in sys.argv[1:]:
+        key, value = arg.split('=')
+        if key == 'label':
+            label = value
+            continue
+        args[key] = int(value) if value.isdigit() else value
+    args['format'] = f"{label}{args['format']}"
+    args['format_short'] = f"{label}{args['format_short']}"
     return args
 
 
@@ -84,12 +86,10 @@ def get_instance():
     p = os.getenv('BLOCK_INSTANCE')
     if p and os.path.exists(p):
         return p
-
     return os.getenv('HOME')
 
 
 def main():
-
     output_color = None
     args = parse_args()
     m_point = get_instance()
@@ -103,7 +103,7 @@ def main():
 
     # print stats with format if given
     print(args['format'].format(**stats))  # full text
-    print()  # short text
+    print(args['format_short'].format(**stats))  # short text
 
     # determine color
     if args['crit_threshold'] > int(stats['perc_used']) >= args['warn_threshold']:
