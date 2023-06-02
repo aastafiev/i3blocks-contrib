@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 init_color=${init_color:-#FFFF00}
 on_color=${on_color:-#00FF00}
-label=${label:-"ON"}
+label=${LABEL:-"ON"}
 export init_color on_color label
 nmcli -t connection show --active | awk -F ':' '
 BEGIN {
@@ -19,4 +19,9 @@ $3=="tun" || ($4~/^tap/ || $3~/^tap/) {
     status=label
     color=on_color
 }
-END {if(status) gsub(/[ \t]+$/, "", status); printf("%s\n%s\n%s\n", name, status, color)}'
+END {
+    if(status) {
+        gsub(/[ \t]+$/, "", status)
+        printf("%s%s\n%s\n%s\n", label, name, status, color)
+    }
+}'
