@@ -102,8 +102,8 @@ def main():
         print('Mount Point: %s' % m_point)
 
     # print stats with format if given
-    print(args['format'].format(**stats))
-    print()
+    print(args['format'].format(**stats))  # full text
+    print()  # short text
 
     # determine color
     if args['crit_threshold'] > int(stats['perc_used']) >= args['warn_threshold']:
