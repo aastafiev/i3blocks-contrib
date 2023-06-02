@@ -16,8 +16,13 @@
 
 TYPE="${BLOCK_INSTANCE:-mem}"
 PERCENT="${PERCENT:-true}"
+label=${LABEL:-"MEM"}
+export label
 
 awk -v type=$TYPE -v percent=$PERCENT '
+BEGIN {
+    label=ENVIRON["label"]
+}
 /^MemTotal:/ {
 	mem_total=$2
 }
@@ -54,12 +59,12 @@ END {
 
 	# full text
 	if (percent == "true" ) {
-		printf("%.1fG/%.1fG (%.f%%)\n", used, total, pct)
+		printf("%s%.1fG/%.1fG (%.f%%)\n", label, used, total, pct)
 	} else {
-		printf("%.1fG/%.1fG\n", used, total)
+		printf("%s%.1fG/%.1fG\n", label, used, total)
 	}
 	# short text
-	printf("%.f%%\n", pct)
+	printf("%s%.f%%\n", label, pct)
 
 	# color
 	if (pct > 90) {
